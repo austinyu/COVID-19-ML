@@ -1,0 +1,59 @@
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+```
+
+```{r}
+raw_df <- read.csv("data/owid-covid-data.csv")
+```
+```{r}
+vaccination_icu <- raw_df %>% 
+  mutate(
+    date = ymd(date)
+  ) %>% filter(iso_code == 'USA') %>% 
+  select('date', 'icu_patients', 'total_vaccinations') %>% 
+  drop_na()
+vaccination_icu <- vaccination_icu %>% 
+  mutate(
+    icu_patients = (icu_patients - mean(icu_patients)) / sd(icu_patients), 
+    total_vaccinations = (total_vaccinations - mean(total_vaccinations)) / sd(total_vaccinations)
+  )
+```
+```{r}
+vaccination_icu %>% ggplot() +
+  geom_point(mapping = aes(x = date, y = icu_patients, color = 'icu_patients')) + 
+  geom_point(mapping = aes(x = date, y = total_vaccinations, color = 'total_vaccinations')) 
+```
+
+
+```{r}
+vaccination_us <- read.csv("data/us_state_vaccinations.csv")
+vaccination_us <- vaccination_us %>% 
+  mutate(
+    date = ymd(date)
+  ) %>% 
+  filter(!is.na(people_fully_vaccinated))
+#vaccination_us <- vaccination_us %>% replace(is.na(.), 0)
+```
+
+
+
+```{r}
+vaccination_agg <- vaccination_us %>% 
+  group_by(date) %>% 
+  summarize(people_fully_vaccinated  =sum(people_fully_vaccinated),
+            total_vaccinations = sum(total_vaccinations))
+vaccination_agg
+```
+
+
+```{r}
+vaccination_agg %>% ggplot() +
+  geom_point(mapping = aes(x = date, y = people_fully_vaccinated, color = 'red')) + 
+  geom_point(mapping = aes(x = date, y = total_vaccinations, color = 'blue')) +
+  scale_color_manual(name="Vaccination",
+                       labels=c("Total Vaccination", "Fully Vaccinated"),
+                       values=c("red", "blue"))
+```
+

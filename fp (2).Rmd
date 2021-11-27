@@ -1,0 +1,370 @@
+---
+title: "fp"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidymodels)
+```
+
+
+
+```{r}
+covid_data <-read.csv("data/owid-covid-data.csv")
+NA_df <- filter(covid_data, location == "United States")
+
+new <- NA_df[, sapply(NA_df, class) == "numeric"]
+NA_df$start_date<- c(0:662)
+
+```
+
+```{r}
+bef_delta <- filter(NA_df, date <= "2021-02-28")
+
+af_delta <- filter(NA_df, date > "2021-02-28")
+
+bef_delta_num <- bef_delta[, sapply(bef_delta, class) == "numeric"]
+af_delta_num <- af_delta[, sapply(af_delta, class) == "numeric"]
+
+```
+
+```{r}
+cd<- cor(new, use = "pairwise.complete.obs")
+cor_bef_d <- cor(bef_delta_num, use = "pairwise.complete.obs")
+cor_af_d <- cor(af_delta_num, use = "pairwise.complete.obs")
+```
+
+```{r}
+lr<-linear_reg()%>%
+  set_engine("lm")%>%
+  fit(new_deaths_smoothed~people_fully_vaccinated+ start_date, data = NA_df)#%>%
+  #tidy()
+lr
+glance(lr)$r.squared
+
+#smooth.spline(x = NA_df$people_vaccinated, y= NA_df$new_deaths, df=2)
+
+
+
+br<-linear_reg()%>%
+  set_engine("lm")%>%
+  fit(positive_rate~people_fully_vaccinated+start_date, data = NA_df)
+
+br
+glance(br)$r.squared
+
+#(lr_aug, mapping = aes(x=.fitted, y=.resid))+
+#  geom_point(alpha = 0.5)+
+#  geom_hline(yintercept = 0, color = "gray", lty = "dashed")
+
+```
+```{r bef_delta}
+blr<-linear_reg()%>%
+  set_engine("lm")%>%
+  fit(new_deaths_smoothed~people_fully_vaccinated+ start_date, data = bef_delta)#%>%
+  #tidy()
+blr
+glance(blr)$r.squared
+
+#smooth.spline(x = NA_df$people_vaccinated, y= NA_df$new_deaths, df=2)
+
+
+
+bbr<-linear_reg()%>%
+  set_engine("lm")%>%
+  fit(positive_rate~people_fully_vaccinated+ start_date, data = bef_delta)
+
+bbr
+glance(bbr)$r.squared
+
+#(lr_aug, mapping = aes(x=.fitted, y=.resid))+
+#  geom_point(alpha = 0.5)+
+#  geom_hline(yintercept = 0, color = "gray", lty = "dashed")
+```
+
+```{r af_delta}
+alr<-linear_reg()%>%
+  set_engine("lm")%>%
+  fit(new_deaths_smoothed~people_fully_vaccinated+ start_date, data = af_delta)#%>%
+  #tidy()
+alr
+glance(alr)$r.squared
+
+#smooth.spline(x = NA_df$people_vaccinated, y= NA_df$new_deaths, df=2)
+
+
+
+abr<-linear_reg()%>%
+  set_engine("lm")%>%
+  fit(positive_rate~people_fully_vaccinated+ start_date, data = af_delta)
+
+abr
+glance(abr)$r.squared
+
+#(lr_aug, mapping = aes(x=.fitted, y=.resid))+
+#  geom_point(alpha = 0.5)+
+#  geom_hline(yintercept = 0, color = "gray", lty = "dashed")
+```
+
+
+
+```{r tran_test}
+set.seed(1122)
+
+data_split <- initial_split(NA_df)
+
+covid_train <- training(data_split)
+dim(covid_train)
+covid_test <- testing(data_split)
+dim(covid_test)
+
+covid_mod <-linear_reg() %>%
+  set_engine("lm")
+
+  
+covid_death_pred_tr <- predict(lr, covid_train) %>%
+  bind_cols(covid_train %>%select(new_deaths_smoothed))
+
+covid_death_pred_tr
+
+rsq(covid_death_pred_tr, truth = new_deaths_smoothed, estimate = .pred)
+rmse(covid_death_pred_tr, truth = new_deaths_smoothed, estimate = .pred)
+
+
+covid_death_pred_te <- predict(lr, covid_test) %>%
+  bind_cols(covid_test %>%select(new_deaths_smoothed))
+rsq(covid_death_pred_te, truth = new_deaths_smoothed, estimate = .pred)
+```
+
+
+
+```{r tran_test}
+set.seed(1122)
+
+data_split <- initial_split(NA_df)
+
+covid_train <- training(data_split)
+dim(covid_train)
+covid_test <- testing(data_split)
+dim(covid_test)
+
+covid_mod <-linear_reg() %>%
+  set_engine("lm")
+
+covid_rec <- recipe(new_deaths~., data=covid_train)
+
+covid_wflow <- workflow()%>%
+  add_model(covid_mod) %>%
+  add_variables(outcomes = new_deaths_smoothed, predictors = everything())
+
+covid_p_wflow <- workflow()%>%
+  add_model(covid_mod) %>%
+  add_variables(outcomes = positive_rate, predictors = everything())
+
+  
+covid_death_pred_tr <- predict(lr, covid_train) %>%
+  bind_cols(covid_train %>%select(new_deaths))
+
+covid_death_pred_tr
+
+rsq(covid_death_pred_tr, truth = new_deaths, estimate = .pred)
+rmse(covid_death_pred_tr, truth = new_deaths, estimate = .pred)
+
+
+covid_death_pred_te <- predict(lr, covid_test) %>%
+  bind_cols(covid_test %>%select(new_deaths))
+rsq(covid_death_pred_te, truth = new_deaths, estimate = .pred)
+```
+
+```{r death_cv_full_data}
+set.seed(345)
+
+covid_test_select <- covid_test %>% select("new_deaths_smoothed", "people_fully_vaccinated", "start_date") 
+folds <-vfold_cv(covid_test_select, v=5)
+
+covid_fit_rs <- covid_wflow %>% fit_resamples(folds)
+collect_metrics(covid_fit_rs, summarize = FALSE)
+```
+
+
+```{r positive_cv_full_data}
+set.seed(345)
+ 
+
+covid_test_p_select <- covid_test %>% select("positive_rate", "people_fully_vaccinated", "start_date") 
+folds_p <-vfold_cv(covid_test_p_select, v=5)
+covid_fit_p_rs <- covid_p_wflow %>% fit_resamples(folds_p)
+
+collect_metrics(covid_fit_p_rs, summarize = FALSE)
+```
+
+###Before Delta
+```{r bef_delta}
+blr<-linear_reg()%>%
+  set_engine("lm")%>%
+  fit(new_deaths_smoothed~people_fully_vaccinated+ start_date, data = bef_delta)#%>%
+  #tidy()
+blr
+glance(blr)$r.squared
+
+#smooth.spline(x = NA_df$people_vaccinated, y= NA_df$new_deaths, df=2)
+
+
+
+bbr<-linear_reg()%>%
+  set_engine("lm")%>%
+  fit(positive_rate~people_fully_vaccinated+ start_date, data = bef_delta)
+
+bbr
+glance(bbr)$r.squared
+
+#(lr_aug, mapping = aes(x=.fitted, y=.resid))+
+#  geom_point(alpha = 0.5)+
+#  geom_hline(yintercept = 0, color = "gray", lty = "dashed")
+```
+
+```{r tran_test_before}
+set.seed(1122)
+
+data_split_b <- initial_split(bef_delta)
+
+covid_train_b <- training(data_split_b)
+
+covid_test_b <- testing(data_split_b)
+
+  
+covid_death_pred_b_tr <- predict(blr, covid_train_b) %>%
+  bind_cols(covid_train_b %>%select(new_deaths_smoothed))
+
+covid_death_pred_b_tr
+
+rsq(covid_death_pred_b_tr, truth = new_deaths_smoothed, estimate = .pred)
+rmse(covid_death_pred_b_tr, truth = new_deaths_smoothed, estimate = .pred)
+
+
+covid_death_pred_b_te <- predict(blr, covid_test_b) %>%
+  bind_cols(covid_test_b %>%select(new_deaths_smoothed))
+rsq(covid_death_pred_b_te, truth = new_deaths_smoothed, estimate = .pred)
+```
+
+```{r}
+covid_test_select_b <- covid_test_b %>% select("new_deaths_smoothed", "people_fully_vaccinated", "start_date") 
+
+
+
+set.seed(345)
+folds_b <-vfold_cv(covid_test_select_b, v=5)
+
+
+
+covid_fit_b_rs <- covid_wflow %>% fit_resamples(folds_b)
+
+
+collect_metrics(covid_fit_b_rs)
+```
+
+
+```{r death_cv_ad}
+covid_test_select_b <- covid_test_b %>% select("new_deaths_smoothed", "people_fully_vaccinated", "start_date") 
+
+
+
+set.seed(345)
+folds_b <-vfold_cv(covid_test_select_b, v=5)
+
+
+
+covid_fit_b_rs <- covid_wflow %>% fit_resamples(folds_b)
+
+
+collect_metrics(covid_fit_b_rs)
+
+```
+
+```{r positive_cv_ad}
+covid_test_select_bp <- covid_test_b %>% select("positive_rate", "people_fully_vaccinated", "start_date") 
+
+
+
+set.seed(345)
+
+folds_bp <-vfold_cv(covid_test_select_bp, v=5)
+
+
+
+covid_fit_bp_rs <- covid_p_wflow %>% fit_resamples(folds_bp)
+
+
+collect_metrics(covid_fit_bp_rs)
+
+
+```
+```{r tran_test_after}
+set.seed(1122)
+
+data_split_a <- initial_split(af_delta)
+
+covid_train_a <- training(data_split_a)
+
+covid_test_a <- testing(data_split_a)
+```
+
+```{r death_cv_af}
+covid_test_select_a <- covid_test_a %>% select("new_deaths_smoothed", "people_fully_vaccinated", "start_date") 
+
+
+
+set.seed(345)
+
+folds_a <-vfold_cv(covid_test_select_a, v=5)
+
+
+
+covid_fit_a_rs <- covid_wflow %>% fit_resamples(folds_a)
+
+
+collect_metrics(covid_fit_a_rs)
+```
+
+```{r positive_cv_af}
+covid_test_select_ap <- covid_test_a %>% select("positive_rate", "people_fully_vaccinated", "start_date") 
+
+
+
+set.seed(345)
+
+folds_ap <-vfold_cv(covid_test_select_ap, v=5)
+
+
+
+covid_fit_ap_rs <- covid_p_wflow %>% fit_resamples(folds_ap)
+
+
+collect_metrics(covid_fit_ap_rs)
+```
+
+```{r graph_deat_vacc}
+ggplot(NA_df, aes(x=people_fully_vaccinated, y=new_deaths_smoothed)) +
+  geom_point(size=2, shape=23)
+
+ggplot(bef_delta, aes(x=people_fully_vaccinated, y=new_deaths_smoothed)) +
+  geom_point()#+
+  #geom_smooth(method = "lm", formula = new_deaths_smoothed~people_fully_vaccinated+start_date)
+ggplot(af_delta, aes(x=people_fully_vaccinated, y=new_deaths_smoothed)) +
+  geom_point(size=2, shape=23)
+```
+
+
+
+```{r graph_deat_vacc}
+ggplot(NA_df, aes(x=positive_rate, y=new_deaths_smoothed)) +
+  geom_point(size=2, shape=23)
+
+ggplot(bef_delta, aes(x=positive_rate, y=new_deaths_smoothed)) +
+  geom_point()#+
+  #geom_smooth(method = "lm", formula = new_deaths_smoothed~people_fully_vaccinated+start_date)
+ggplot(af_delta, aes(x=positive_rate, y=new_deaths_smoothed)) +
+  geom_point(size=2, shape=23)
+```
